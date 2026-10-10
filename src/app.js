@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -16,26 +17,62 @@ import requestRoutes from './routes/requestRoutes.js';
 import allocationRoutes from './routes/allocationRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 
+const allowedOrigins = [
+  'https://titan-frontend-chi.vercel.app',
+  env.CLIENT_ORIGIN,
+].filter(Boolean);
+
+const isAllowedVercelPreview = (origin) =>
+  /^https:\/\/titan-frontend-[a-z0-9-]+-jeevan-projects2\.vercel\.app$/.test(
+    origin
+  );
+
 export const createApp = () => {
   const app = express();
 
-  // Basic security rate limiter
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Max 1000 requests per IP
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { success: false, message: 'Too many requests from this IP, please try again later' },
+    message: {
+      success: false,
+      message: 'Too many requests from this IP, please try again later',
+    },
   });
 
-  // Global Middleware
   app.use(limiter);
+
   app.use(
     cors({
-      origin: env.CLIENT_ORIGIN,
+      origin: (origin, callback) => {
+        // Requests without an Origin header, such as health checks.
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        if (
+          allowedOrigins.includes(origin) ||
+          isAllowedVercelPreview(origin)
+        ) {
+          return callback(null, true);
+        }
+
+        return callback(new Error('Origin not allowed by CORS'));
+      },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      methods: [
+        'GET',
+        'POST',
+        'PUT',
+        'PATCH',
+        'DELETE',
+        'OPTIONS',
+      ],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+      ],
     })
   );
 
@@ -47,10 +84,15 @@ export const createApp = () => {
     app.use(morgan('dev'));
   }
 
-  // Health check endpoint
   app.get('/api/health', (req, res) => {
     const dbState = mongoose.connection.readyState;
-    const dbStatusMap = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
+
+    const dbStatusMap = {
+      0: 'disconnected',
+      1: 'connected',
+      2: 'connecting',
+      3: 'disconnecting',
+    };
 
     res.status(200).json({
       success: true,
@@ -63,7 +105,6 @@ export const createApp = () => {
     });
   });
 
-  // Mount API Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/networks', networkRoutes);
   app.use('/api/members', memberRoutes);
@@ -71,7 +112,6 @@ export const createApp = () => {
   app.use('/api/allocations', allocationRoutes);
   app.use('/api/dashboard', dashboardRoutes);
 
-  // Catch-all 404 & Centralized Error Handler
   app.use(notFound);
   app.use(errorHandler);
 
